@@ -51,7 +51,7 @@
 
     <script>
         // ==============================================================
-        // KONFIGURASI CLOUD GOOGLE SHEETS
+        // KONFIGURASI CLOUD GOOGLE SHEETS TERHUBUNG LANGSUNG
         // ==============================================================
         const DEFAULT_GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwWvYI7yv8oH9eHrRyXeUwi9KY1r-2mmcTZBfXCK_danpCKykpFRc2xBXRZOJqgCl3CaA/exec"; 
 
@@ -110,7 +110,7 @@
             }
         };
 
-        // Muat Data Siswa
+        // Jika data siswa di localStorage masih kosong atau belum lengkap, gunakan data 875 siswa bawaan
         if (!CBTApp.students || CBTApp.students.length === 0) {
             CBTApp.students = getDefaultStudentList();
             CBTApp.save('students');
@@ -517,6 +517,7 @@
                             </div>
                         </div>
 
+                        <!-- Kolom Kanan: Daftar Soal Bank Aktif -->
                         <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                             <div class="flex justify-between items-center mb-2">
                                 <h3 class="font-bold text-slate-800 text-sm">Daftar Soal Bank Kelas ${g}</h3>
@@ -926,7 +927,7 @@
             }
         }
 
-        // TAB 3: Data Siswa
+        // TAB 3: Data Siswa (Dukungan Ekstraksi Excel Multi-Sheet Presensi Otomatis)
         function renderTabStudents() {
             const container = document.getElementById('proctor-tab-content');
             container.innerHTML = `
@@ -1076,108 +1077,124 @@
             reader.readAsArrayBuffer(file);
         };
 
-        // TAB 4: Hasil Realtime Monitoring & Filter Kelas
+        // TAB 4: Hasil Realtime Monitoring & Filter Kelas (Bulletproof)
         let liveRefreshInterval = null;
 
         function getAvailableResultClasses() {
-            const classesFromResults = (CBTApp.results || []).map(r => r.studentClass).filter(Boolean);
-            const classesFromStudents = (CBTApp.students || []).map(s => s.class).filter(Boolean);
-            const set = new Set([...classesFromResults, ...classesFromStudents]);
-            return Array.from(set).sort((a,b) => {
-                const partsA = a.split('-');
-                const partsB = b.split('-');
-                if (partsA[0] !== partsB[0]) return partsA[0].localeCompare(partsB[0]);
-                return (parseInt(partsA[1]) || 0) - (parseInt(partsB[1]) || 0);
-            });
+            try {
+                const classesFromResults = (CBTApp.results || []).map(r => r && r.studentClass ? String(r.studentClass).trim() : '').filter(Boolean);
+                const classesFromStudents = (CBTApp.students || []).map(s => s && s.class ? String(s.class).trim() : '').filter(Boolean);
+                const set = new Set([...classesFromResults, ...classesFromStudents]);
+                return Array.from(set).sort((a,b) => {
+                    const partsA = String(a).split('-');
+                    const partsB = String(b).split('-');
+                    if (partsA[0] !== partsB[0]) return partsA[0].localeCompare(partsB[0]);
+                    return (parseInt(partsA[1]) || 0) - (parseInt(partsB[1]) || 0);
+                });
+            } catch(e) {
+                console.error("Error getAvailableResultClasses:", e);
+                return [];
+            }
         }
 
         function renderTabResults() {
             const container = document.getElementById('proctor-tab-content');
-            const availableClasses = getAvailableResultClasses();
-            const currentFilter = CBTApp.selectedResultClass || 'ALL';
+            if (!container) return;
+            try {
+                const availableClasses = getAvailableResultClasses();
+                const currentFilter = CBTApp.selectedResultClass || 'ALL';
 
-            container.innerHTML = `
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
-                    <div class="flex flex-col md:flex-row justify-between md:items-center gap-4 border-b pb-4">
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <h3 class="font-bold text-slate-800 text-base">Rekapitulasi Nilai & Live Monitor Siswa</h3>
-                                <span id="live-indicator" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 animate-pulse">
-                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Live Realtime
-                                </span>
+                container.innerHTML = `
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
+                        <div class="flex flex-col md:flex-row justify-between md:items-center gap-4 border-b pb-4">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="font-bold text-slate-800 text-base">Rekapitulasi Nilai & Live Monitor Siswa</h3>
+                                    <span id="live-indicator" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 animate-pulse">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Live Realtime
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-0.5">Pantau siswa yang sedang ujian, filter per kelas, dan kelola hasil siswa secara langsung.</p>
                             </div>
-                            <p class="text-xs text-slate-400 mt-0.5">Pantau siswa yang sedang ujian, filter per kelas, dan kelola hasil siswa secara langsung.</p>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button onclick="fetchLiveResultsFromCloud(true)" class="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                                    <i class="fa-solid fa-arrows-rotate"></i> Refresh Sekarang
+                                </button>
+                                <button onclick="exportToCSV()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-file-excel"></i> Download Excel (CSV)
+                                </button>
+                            </div>
                         </div>
-                        <div class="flex flex-wrap items-center gap-2">
-                            <button onclick="fetchLiveResultsFromCloud(true)" class="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
-                                <i class="fa-solid fa-arrows-rotate"></i> Refresh Sekarang
-                            </button>
-                            <button onclick="exportToCSV()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
-                                <i class="fa-solid fa-file-excel"></i> Download Excel (CSV)
-                            </button>
+
+                        <!-- Baris Filter Rombel Kelas & Ringkasan -->
+                        <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                            <div class="flex items-center gap-2.5">
+                                <label class="font-bold text-slate-700 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-filter text-indigo-600"></i> Filter Rombel Kelas:
+                                </label>
+                                <select id="result-class-filter" onchange="changeResultClassFilter(this.value)" class="px-3 py-1.5 rounded-lg border bg-white font-bold text-indigo-700 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                                    <option value="ALL" ${currentFilter === 'ALL' ? 'selected' : ''}>-- Semua Kelas (${(CBTApp.results || []).length} Rekaman) --</option>
+                                    ${availableClasses.map(cls => {
+                                        const count = (CBTApp.results || []).filter(r => r.studentClass === cls).length;
+                                        return `<option value="${cls}" ${currentFilter === cls ? 'selected' : ''}>Kelas ${cls} (${count} Data)</option>`;
+                                    }).join('')}
+                                </select>
+                            </div>
+
+                            <div class="text-[11px] text-slate-500 font-medium">
+                                Menampilkan: <strong id="lbl-result-count" class="text-indigo-600 font-bold">${getFilteredResults().length}</strong> dari <strong>${(CBTApp.results || []).length}</strong> total rekaman
+                            </div>
+                        </div>
+
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-50 uppercase text-slate-500 font-semibold border-b">
+                                    <tr>
+                                        <th class="p-3">Waktu</th>
+                                        <th class="p-3">Nama Lengkap Siswa</th>
+                                        <th class="p-3">Kelas</th>
+                                        <th class="p-3">Token Ujian</th>
+                                        <th class="p-3">Status</th>
+                                        <th class="p-3">Nilai Akhir</th>
+                                        <th class="p-3">Pelanggaran (Layar/Tab)</th>
+                                        <th class="p-3 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="results-table-body" class="divide-y divide-slate-100">
+                                    ${renderResultRowsHTML()}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
+                `;
 
-                    <!-- Baris Filter Rombel Kelas & Ringkasan -->
-                    <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
-                        <div class="flex items-center gap-2.5">
-                            <label class="font-bold text-slate-700 flex items-center gap-1.5">
-                                <i class="fa-solid fa-filter text-indigo-600"></i> Filter Rombel Kelas:
-                            </label>
-                            <select id="result-class-filter" onchange="changeResultClassFilter(this.value)" class="px-3 py-1.5 rounded-lg border bg-white font-bold text-indigo-700 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                                <option value="ALL" ${currentFilter === 'ALL' ? 'selected' : ''}>-- Semua Kelas (${CBTApp.results.length} Siswa Terdata) --</option>
-                                ${availableClasses.map(cls => {
-                                    const count = CBTApp.results.filter(r => r.studentClass === cls).length;
-                                    return `<option value="${cls}" ${currentFilter === cls ? 'selected' : ''}>Kelas ${cls} (${count} Siswa)</option>`;
-                                }).join('')}
-                            </select>
-                        </div>
+                fetchLiveResultsFromCloud();
 
-                        <div class="text-[11px] text-slate-500 font-medium">
-                            Menampilkan: <strong id="lbl-result-count" class="text-indigo-600 font-bold">${getFilteredResults().length}</strong> dari <strong>${CBTApp.results.length}</strong> total rekaman ujian
-                        </div>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-xs">
-                            <thead class="bg-slate-50 uppercase text-slate-500 font-semibold border-b">
-                                <tr>
-                                    <th class="p-3">Waktu</th>
-                                    <th class="p-3">Nama Lengkap Siswa</th>
-                                    <th class="p-3">Kelas</th>
-                                    <th class="p-3">Token Ujian</th>
-                                    <th class="p-3">Status</th>
-                                    <th class="p-3">Nilai Akhir</th>
-                                    <th class="p-3">Pelanggaran (Layar/Tab)</th>
-                                    <th class="p-3 text-center">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="results-table-body" class="divide-y divide-slate-100">
-                                ${renderResultRowsHTML()}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-
-            fetchLiveResultsFromCloud();
-
-            if (liveRefreshInterval) clearInterval(liveRefreshInterval);
-            liveRefreshInterval = setInterval(() => {
-                if (CBTApp.activeTab === 'results') {
-                    fetchLiveResultsFromCloud(false);
-                } else {
-                    clearInterval(liveRefreshInterval);
-                }
-            }, 5000);
+                if (liveRefreshInterval) clearInterval(liveRefreshInterval);
+                liveRefreshInterval = setInterval(() => {
+                    if (CBTApp.activeTab === 'results') {
+                        fetchLiveResultsFromCloud(false);
+                    } else {
+                        clearInterval(liveRefreshInterval);
+                    }
+                }, 5000);
+            } catch(err) {
+                console.error("Error renderTabResults:", err);
+                container.innerHTML = `<div class="p-6 bg-white rounded-2xl shadow-sm text-rose-600 text-xs font-semibold">Terjadi kesalahan merender hasil: ${err.message}</div>`;
+            }
         }
 
         function getFilteredResults() {
-            const currentFilter = CBTApp.selectedResultClass || 'ALL';
-            if (currentFilter === 'ALL') {
-                return CBTApp.results || [];
+            try {
+                const currentFilter = CBTApp.selectedResultClass || 'ALL';
+                const list = CBTApp.results || [];
+                if (currentFilter === 'ALL') {
+                    return list;
+                }
+                return list.filter(r => r && r.studentClass === currentFilter);
+            } catch(e) {
+                return [];
             }
-            return (CBTApp.results || []).filter(r => r.studentClass === currentFilter);
         }
 
         window.changeResultClassFilter = function(selectedVal) {
@@ -1189,69 +1206,87 @@
         };
 
         function renderResultRowsHTML() {
-            const list = getFilteredResults();
-            if (!list || list.length === 0) {
-                const currentFilter = CBTApp.selectedResultClass || 'ALL';
-                const msg = currentFilter === 'ALL' 
-                    ? 'Belum ada siswa yang masuk atau menyelesaikan ujian. Menunggu aktivitas siswa...'
-                    : `Belum ada data aktivitas siswa untuk Kelas ${currentFilter}.`;
-                return `<tr><td colspan="8" class="text-center py-10 text-slate-400">${msg}</td></tr>`;
-            }
+            try {
+                const list = getFilteredResults();
+                if (!list || list.length === 0) {
+                    const currentFilter = CBTApp.selectedResultClass || 'ALL';
+                    const msg = currentFilter === 'ALL' 
+                        ? 'Belum ada siswa yang masuk atau menyelesaikan ujian. Menunggu aktivitas siswa...'
+                        : `Belum ada data aktivitas siswa untuk Kelas ${currentFilter}.`;
+                    return `<tr><td colspan="8" class="text-center py-10 text-slate-400 font-medium">${msg}</td></tr>`;
+                }
 
-            return list.map((r) => {
-                const isWorking = (r.status || '').toUpperCase() === 'SEDANG MENGERJAKAN';
-                return `
-                    <tr class="hover:bg-slate-50/60 transition">
-                        <td class="p-3 text-slate-400 font-mono">${r.submittedAt || 'Baru saja'}</td>
-                        <td class="p-3 font-bold text-slate-800">${r.studentName}</td>
-                        <td class="p-3"><span class="px-2 py-0.5 bg-slate-100 font-bold rounded">${r.studentClass}</span></td>
-                        <td class="p-3 font-mono font-bold text-indigo-600">${r.token}</td>
-                        <td class="p-3">
-                            <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${isWorking ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-emerald-100 text-emerald-800'}">
-                                ${isWorking ? '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Sedang Mengerjakan' : '<i class="fa-solid fa-check mr-1"></i> Selesai'}
-                            </span>
-                        </td>
-                        <td class="p-3 font-extrabold text-sm ${isWorking ? 'text-slate-400' : (r.percentage >= 70 ? 'text-emerald-600' : 'text-rose-600')}">
-                            ${isWorking ? 'Proses...' : `${Number(r.percentage || 0).toFixed(0)} / 100`}
-                        </td>
-                        <td class="p-3">
-                            <span class="px-2.5 py-1 rounded-full font-bold ${r.violations > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
-                                ${r.violations || 0} kali
-                            </span>
-                        </td>
-                        <td class="p-3 text-center">
-                            <button onclick="deleteSingleResult('${r.studentName}', '${r.token}', '${r.studentClass}')" class="px-2.5 py-1 text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-transparent rounded-lg font-semibold text-[11px] transition inline-flex items-center gap-1 shadow-sm" title="Hapus rekaman siswa ini">
-                                <i class="fa-solid fa-trash-can"></i> Hapus
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
+                return list.map((r, idx) => {
+                    if (!r) return '';
+                    const isWorking = (r.status || '').toUpperCase() === 'SEDANG MENGERJAKAN';
+                    const sTime = r.submittedAt || 'Baru saja';
+                    const sName = r.studentName || '-';
+                    const sClass = r.studentClass || '-';
+                    const sToken = r.token || '-';
+                    const sViolations = r.violations || 0;
+                    const pctVal = r.percentage !== undefined && r.percentage !== null && !isNaN(Number(r.percentage)) 
+                        ? `${Number(r.percentage).toFixed(0)} / 100` 
+                        : (r.percentage || '-');
+                    const isPassed = !isNaN(Number(r.percentage)) && Number(r.percentage) >= 70;
+
+                    return `
+                        <tr class="hover:bg-slate-50/60 transition">
+                            <td class="p-3 text-slate-400 font-mono">${sTime}</td>
+                            <td class="p-3 font-bold text-slate-800">${sName}</td>
+                            <td class="p-3"><span class="px-2 py-0.5 bg-slate-100 font-bold rounded text-slate-700">${sClass}</span></td>
+                            <td class="p-3 font-mono font-bold text-indigo-600">${sToken}</td>
+                            <td class="p-3">
+                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${isWorking ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-emerald-100 text-emerald-800'}">
+                                    ${isWorking ? '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Sedang Mengerjakan' : '<i class="fa-solid fa-check mr-1"></i> Selesai'}
+                                </span>
+                            </td>
+                            <td class="p-3 font-extrabold text-sm ${isWorking ? 'text-slate-400' : (isPassed ? 'text-emerald-600' : 'text-rose-600')}">
+                                ${isWorking ? 'Proses...' : pctVal}
+                            </td>
+                            <td class="p-3">
+                                <span class="px-2.5 py-1 rounded-full font-bold text-[11px] ${sViolations > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
+                                    ${sViolations} kali
+                                </span>
+                            </td>
+                            <td class="p-3 text-center">
+                                <button onclick="deleteResultByIndex(${idx})" class="px-2.5 py-1 text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-transparent rounded-lg font-bold text-[11px] transition inline-flex items-center gap-1 shadow-sm" title="Hapus rekaman siswa ini">
+                                    <i class="fa-solid fa-trash-can"></i> Hapus
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch(e) {
+                console.error("Error renderResultRowsHTML:", e);
+                return `<tr><td colspan="8" class="text-center py-6 text-rose-500 font-semibold">Gagal memuat baris data: ${e.message}</td></tr>`;
+            }
         }
 
-        window.deleteSingleResult = function(studentName, token, studentClass) {
-            const confirmed = confirm(`Apakah Anda yakin ingin menghapus data siswa:\n"${studentName}" (${studentClass}) - Token: ${token}?\n\nData ini akan dihapus dari dasbor dan Google Sheets.`);
+        window.deleteResultByIndex = function(idx) {
+            const filtered = getFilteredResults();
+            const target = filtered[idx];
+            if (!target) return;
+
+            const confirmed = confirm(`Apakah Anda yakin ingin menghapus data siswa:\n"${target.studentName}" (${target.studentClass}) - Token: ${target.token}?\n\nData ini akan dihapus dari dasbor dan Google Sheets.`);
             if (!confirmed) return;
 
-            CBTApp.results = CBTApp.results.filter(r => !(r.studentName === studentName && r.token === token));
+            // Hapus dari state lokal
+            CBTApp.results = (CBTApp.results || []).filter(r => !(r.studentName === target.studentName && r.token === target.token));
             CBTApp.save('results');
 
+            // Hapus di Google Sheets
             const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
             if (activeCloudUrl && activeCloudUrl.startsWith('http')) {
                 fetch(activeCloudUrl, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'deleteResult', studentName: studentName, token: token })
+                    body: JSON.stringify({ action: 'deleteResult', studentName: target.studentName, token: target.token })
                 }).catch(e => console.warn('Delete result GAS error:', e));
             }
 
-            showToast(`Data ujian "${studentName}" berhasil dihapus!`, 'success');
-
-            const tbody = document.getElementById('results-table-body');
-            const lblCount = document.getElementById('lbl-result-count');
-            if (tbody) tbody.innerHTML = renderResultRowsHTML();
-            if (lblCount) lblCount.innerText = getFilteredResults().length;
+            showToast(`Data ujian "${target.studentName}" berhasil dihapus!`, 'success');
+            renderTabResults();
         };
 
         window.fetchLiveResultsFromCloud = function(showNotice = false) {
@@ -1268,7 +1303,7 @@
                         const lblCount = document.getElementById('lbl-result-count');
                         if (tbody) tbody.innerHTML = renderResultRowsHTML();
                         if (lblCount) lblCount.innerText = getFilteredResults().length;
-                        if (showNotice) showToast(`Data terupdate (${data.results.length} siswa)!`, 'success');
+                        if (showNotice) showToast(`Data terupdate (${data.results.length} rekaman)!`, 'success');
                     }
                 })
                 .catch(e => {
@@ -1282,7 +1317,8 @@
             
             let csv = "Nama,Kelas,Token,Status,Skor,MaxSkor,Persentase,Pelanggaran,Waktu\n";
             listToExport.forEach(r => {
-                csv += `"${r.studentName}","${r.studentClass}","${r.token}","${r.status || 'SELESAI'}",${r.score || 0},${r.maxScore || 100},${Number(r.percentage || 0).toFixed(0)},${r.violations || 0},"${r.submittedAt || ''}"\n`;
+                if (!r) return;
+                csv += `"${r.studentName || ''}","${r.studentClass || ''}","${r.token || ''}","${r.status || 'SELESAI'}",${r.score || 0},${r.maxScore || 100},${Number(r.percentage || 0).toFixed(0)},${r.violations || 0},"${r.submittedAt || ''}"\n`;
             });
 
             const currentFilter = CBTApp.selectedResultClass || 'ALL';
@@ -1407,7 +1443,7 @@
             let session = CBTApp.sessions.find(s => s.token === token);
             const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
 
-            // Beri sinyal ke Cloud bahwa siswa sudah login & sedang mengerjakan
+            // Beri sinyal ke Cloud bahwa siswa sedang mengerjakan
             if (activeCloudUrl && activeCloudUrl.startsWith('http')) {
                 fetch(activeCloudUrl, {
                     method: 'POST',
@@ -1477,7 +1513,10 @@
             CBTApp.violationCount++;
             const sisa = CBTApp.maxViolations - CBTApp.violationCount;
 
-            alert(`[PERINGATAN KECURANGAN ${CBTApp.violationCount}/${CBTApp.maxViolations}]\nAnda terdeteksi keluar dari layar penuh atau berpindah tab!\nTindakan telah dilaporkan ke server proktor.\nSisa toleransi: ${Math.max(0, sisa)} kali`);
+            alert(`[PERINGATAN KECURANGAN ${CBTApp.violationCount}/${CBTApp.maxViolations}]
+Anda terdeteksi keluar dari layar penuh atau berpindah tab!
+Tindakan telah dilaporkan ke server proktor.
+Sisa toleransi: ${Math.max(0, sisa)} kali`);
 
             requestFullScreen();
 
@@ -1734,7 +1773,7 @@
             CBTApp.results.unshift(res);
             CBTApp.save('results');
 
-            // Kirim nilai akhir ke Google Sheets
+            // Kirim nilai siswa langsung ke Google Sheets
             const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
             if (activeCloudUrl && activeCloudUrl.startsWith('http')) {
                 fetch(activeCloudUrl, {
