@@ -22,7 +22,7 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
 
-    <!-- Top Navbar: Hanya tampil untuk Proktor/Server -->
+    <!-- Top Navbar: Proktor/Server -->
     <header id="proctor-header" class="bg-slate-900 text-white shadow-md sticky top-0 z-30">
         <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
             <div class="flex items-center space-x-3">
@@ -51,7 +51,7 @@
 
     <script>
         // ==============================================================
-        // KONFIGURASI CLOUD GOOGLE SHEETS TERHUBUNG LANGSUNG
+        // KONFIGURASI CLOUD GOOGLE SHEETS
         // ==============================================================
         const DEFAULT_GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwWvYI7yv8oH9eHrRyXeUwi9KY1r-2mmcTZBfXCK_danpCKykpFRc2xBXRZOJqgCl3CaA/exec"; 
 
@@ -517,7 +517,6 @@
                             </div>
                         </div>
 
-                        <!-- Kolom Kanan: Daftar Soal Bank Aktif -->
                         <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                             <div class="flex justify-between items-center mb-2">
                                 <h3 class="font-bold text-slate-800 text-sm">Daftar Soal Bank Kelas ${g}</h3>
@@ -927,7 +926,7 @@
             }
         }
 
-        // TAB 3: Data Siswa (Dukungan Ekstraksi Excel Multi-Sheet Presensi Otomatis)
+        // TAB 3: Data Siswa
         function renderTabStudents() {
             const container = document.getElementById('proctor-tab-content');
             container.innerHTML = `
@@ -1077,7 +1076,7 @@
             reader.readAsArrayBuffer(file);
         };
 
-        // TAB 4: Hasil Realtime Monitoring & Filter Kelas (Bulletproof)
+        // TAB 4: Hasil Realtime Monitoring & Filter Kelas
         let liveRefreshInterval = null;
 
         function getAvailableResultClasses() {
@@ -1180,7 +1179,7 @@
                 }, 5000);
             } catch(err) {
                 console.error("Error renderTabResults:", err);
-                container.innerHTML = `<div class="p-6 bg-white rounded-2xl shadow-sm text-rose-600 text-xs font-semibold">Terjadi kesalahan merender hasil: ${err.message}</div>`;
+                container.innerHTML = `<div class="p-6 bg-white rounded-2xl shadow-sm text-rose-600 text-xs">Terjadi kesalahan memuat data: ${err.message}</div>`;
             }
         }
 
@@ -1272,11 +1271,9 @@
             const confirmed = confirm(`Apakah Anda yakin ingin menghapus data siswa:\n"${target.studentName}" (${target.studentClass}) - Token: ${target.token}?\n\nData ini akan dihapus dari dasbor dan Google Sheets.`);
             if (!confirmed) return;
 
-            // Hapus dari state lokal
             CBTApp.results = (CBTApp.results || []).filter(r => !(r.studentName === target.studentName && r.token === target.token));
             CBTApp.save('results');
 
-            // Hapus di Google Sheets
             const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
             if (activeCloudUrl && activeCloudUrl.startsWith('http')) {
                 fetch(activeCloudUrl, {
@@ -1314,26 +1311,28 @@
         };
 
         window.exportToCSV = function() {
-            const listToExport = getFilteredResults();
-            if (!listToExport || listToExport.length === 0) return showToast("Belum ada data yang dipilih!", "error");
+            if (!CBTApp.results || CBTApp.results.length === 0) return showToast("Belum ada data nilai!", "error");
             
             let csv = "Nama,Kelas,Token,Status,Skor,MaxSkor,Persentase,Pelanggaran,Waktu\n";
-            listToExport.forEach(r => {
+            CBTApp.results.forEach(r => {
                 if (!r) return;
                 csv += `"${r.studentName || ''}","${r.studentClass || ''}","${r.token || ''}","${r.status || 'SELESAI'}",${r.score || 0},${r.maxScore || 100},${Number(r.percentage || 0).toFixed(0)},${r.violations || 0},"${r.submittedAt || ''}"\n`;
             });
 
-            const currentFilter = CBTApp.selectedResultClass || 'ALL';
-            const filename = currentFilter === 'ALL' ? `Rekap_Nilai_Semua_Kelas_${Date.now()}.csv` : `Rekap_Nilai_Kelas_${currentFilter}_${Date.now()}.csv`;
-
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
-            link.href = "data:text/csv;charset=utf-8," + encodeURI(csv);
-            link.download = filename;
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Rekap_Nilai_${Date.now()}.csv`);
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
+            
+            showToast("File CSV rekap nilai berhasil diunduh!", "success");
         };
 
         // ========================================================
-        // TAMPILAN KHUSUS SISWA (Hanya Dibuka Melalui Link IP)
+        // TAMPILAN KHUSUS SISWA
         // ========================================================
         window.renderStudentLanding = function() {
             document.getElementById('proctor-header').classList.add('hidden');
@@ -1445,7 +1444,6 @@
             let session = CBTApp.sessions.find(s => s.token === token);
             const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
 
-            // Beri sinyal ke Cloud bahwa siswa sedang mengerjakan
             if (activeCloudUrl && activeCloudUrl.startsWith('http')) {
                 fetch(activeCloudUrl, {
                     method: 'POST',
@@ -1727,7 +1725,11 @@
             session.questions.forEach(q => {
                 total += q.weight;
                 const uAns = CBTApp.userAnswers[q.id];
-                answersDetail[q.questionText] = uAns || "(Tidak dijawab)";
+
+                // HANYA REKAM JAWABAN ISIAN DAN ESSAY
+                if (q.type === 'isian' || q.type === 'essay') {
+                    answersDetail[q.questionText] = uAns || "(Tidak dijawab)";
+                }
 
                 if (q.type === 'pg' || !q.type) {
                     if (uAns === q.correctAnswer) achieved += q.weight;
@@ -1763,7 +1765,6 @@
                 token: session.token,
                 studentName: CBTApp.studentInfo.name,
                 studentClass: CBTApp.studentInfo.class,
-                status: 'SELESAI',
                 score: achieved,
                 maxScore: total,
                 percentage: percentage,
@@ -1775,7 +1776,7 @@
             CBTApp.results.unshift(res);
             CBTApp.save('results');
 
-            // Kirim nilai siswa langsung ke Google Sheets
+            // Kirim nilai & isian jawaban ke Google Sheets
             const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
             if (activeCloudUrl && activeCloudUrl.startsWith('http')) {
                 fetch(activeCloudUrl, {
@@ -1784,7 +1785,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'submitResult', result: res })
                 }).then(() => {
-                    console.log("Nilai terkirim ke Google Sheets!");
+                    console.log("Nilai & Isian terkirim ke Google Sheets!");
                 }).catch(e => console.warn("Submit GAS error:", e));
             }
 
