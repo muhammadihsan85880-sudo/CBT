@@ -304,10 +304,10 @@
                             CBTApp.sessions.map((s, idx) => {
                                 const protocol = window.location.protocol;
                                 let studentExamLink = `${protocol}//${baseHost}${cleanPath}?token=${s.token}`;
-                                const activeGas = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
-                                if (activeGas && activeGas.startsWith('http')) {
-                                    studentExamLink += `&gas=${encodeURIComponent(activeGas)}`;
-                                }
+                    const activeGas = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
+                    if (activeGas && activeGas.startsWith('http')) {
+                        studentExamLink += `&gas=${encodeURIComponent(activeGas)}`;
+                    }
                                 return `
                                     <div class="p-4 border rounded-2xl bg-slate-50/50 space-y-4 relative">
                                         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pr-10">
@@ -463,6 +463,7 @@
 
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div class="space-y-6">
+                            <!-- 1. Upload File Soal (Word / Excel / JSON) -->
                             <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                                 <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
                                     <i class="fa-solid fa-file-word text-indigo-600"></i> Upload File (Word / Excel / JSON)
@@ -481,6 +482,7 @@
                                 </div>
                             </div>
 
+                            <!-- 2. Tambah Manual 6 Bentuk Soal -->
                             <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                                 <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
                                     <i class="fa-solid fa-keyboard text-emerald-600"></i> Tambah Soal Manual (Kelas ${g})
@@ -518,6 +520,7 @@
                             </div>
                         </div>
 
+                        <!-- Kolom Kanan: Daftar Soal Bank Aktif -->
                         <div class="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-3">
                             <div class="flex justify-between items-center mb-2">
                                 <h3 class="font-bold text-slate-800 text-sm">Daftar Soal Bank Kelas ${g}</h3>
@@ -1061,6 +1064,7 @@
                     });
 
                     if (newlyImported.length > 0) {
+                        // Gabungkan dengan data yang sudah ada (update rombel)
                         const importedClasses = [...new Set(newlyImported.map(s => s.class))];
                         CBTApp.students = CBTApp.students.filter(s => !importedClasses.includes(s.class)).concat(newlyImported);
                         CBTApp.save('students');
@@ -1079,52 +1083,108 @@
             reader.readAsArrayBuffer(file);
         };
 
-        // TAB 4: Hasil Realtime
+        // TAB 4: Hasil Realtime Monitoring
+        let liveRefreshInterval = null;
+
         function renderTabResults() {
             const container = document.getElementById('proctor-tab-content');
             container.innerHTML = `
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="font-bold text-slate-800 text-sm">Rekapitulasi Nilai & Pelanggaran Realtime</h3>
-                        <button onclick="exportToCSV()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold">
-                            <i class="fa-solid fa-file-excel mr-1"></i> Download Rekap CSV
-                        </button>
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                    <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b pb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 class="font-bold text-slate-800 text-base">Rekapitulasi Nilai & Live Monitor Siswa</h3>
+                                <span id="live-indicator" class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 animate-pulse">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Live Realtime
+                                </span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-0.5">Nilai ujian dan catatan pelanggaran siswa terupdate otomatis dari Google Sheets.</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="fetchLiveResultsFromCloud(true)" class="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-arrows-rotate"></i> Refresh Sekarang
+                            </button>
+                            <button onclick="exportToCSV()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-file-excel"></i> Download Excel (CSV)
+                            </button>
+                        </div>
                     </div>
+
                     <div class="overflow-x-auto">
                         <table class="w-full text-left text-xs">
                             <thead class="bg-slate-50 uppercase text-slate-500 font-semibold border-b">
                                 <tr>
-                                    <th class="p-3">Nama Siswa</th>
-                                    <th class="p-3">Kelas</th>
-                                    <th class="p-3">Token</th>
-                                    <th class="p-3">Nilai Akhir</th>
-                                    <th class="p-3">Pelanggaran (Keluar Layar / Tab)</th>
                                     <th class="p-3">Waktu Selesai</th>
+                                    <th class="p-3">Nama Lengkap Siswa</th>
+                                    <th class="p-3">Kelas</th>
+                                    <th class="p-3">Token Ujian</th>
+                                    <th class="p-3">Nilai Akhir</th>
+                                    <th class="p-3">Pelanggaran (Layar/Tab)</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y">
-                                ${CBTApp.results.length === 0 ? `<tr><td colspan="6" class="text-center py-8 text-slate-400">Belum ada siswa yang menyelesaikan ujian.</td></tr>` : 
-                                    CBTApp.results.map(r => `
-                                        <tr>
-                                            <td class="p-3 font-bold text-slate-800">${r.studentName}</td>
-                                            <td class="p-3">${r.studentClass}</td>
-                                            <td class="p-3 font-mono font-bold">${r.token}</td>
-                                            <td class="p-3 font-bold text-indigo-600">${r.score} / ${r.maxScore} (${r.percentage.toFixed(0)}%)</td>
-                                            <td class="p-3">
-                                                <span class="px-2.5 py-1 rounded-full font-bold ${r.violations > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
-                                                    ${r.violations} kali
-                                                </span>
-                                            </td>
-                                            <td class="p-3 text-slate-400">${new Date(r.submittedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
-                                        </tr>
-                                    `).join('')
-                                }
+                            <tbody id="results-table-body" class="divide-y divide-slate-100">
+                                ${renderResultRowsHTML()}
                             </tbody>
                         </table>
                     </div>
                 </div>
             `;
+
+            // Segera ambil data terkini dari Google Sheets
+            fetchLiveResultsFromCloud();
+
+            // Pasang polling otomatis setiap 5 detik saat Proktor membuka tab Hasil Realtime
+            if (liveRefreshInterval) clearInterval(liveRefreshInterval);
+            liveRefreshInterval = setInterval(() => {
+                if (CBTApp.activeTab === 'results') {
+                    fetchLiveResultsFromCloud(false);
+                } else {
+                    clearInterval(liveRefreshInterval);
+                }
+            }, 5000);
         }
+
+        function renderResultRowsHTML() {
+            if (!CBTApp.results || CBTApp.results.length === 0) {
+                return `<tr><td colspan="6" class="text-center py-10 text-slate-400">Belum ada siswa yang menyelesaikan ujian. Menunggu pengiriman lembar jawaban...</td></tr>`;
+            }
+            return CBTApp.results.map(r => `
+                <tr class="hover:bg-slate-50/60 transition">
+                    <td class="p-3 text-slate-400 font-mono">${r.submittedAt || 'Baru saja'}</td>
+                    <td class="p-3 font-bold text-slate-800">${r.studentName}</td>
+                    <td class="p-3"><span class="px-2 py-0.5 bg-slate-100 font-bold rounded">${r.studentClass}</span></td>
+                    <td class="p-3 font-mono font-bold text-indigo-600">${r.token}</td>
+                    <td class="p-3 font-extrabold text-sm ${r.percentage >= 70 ? 'text-emerald-600' : 'text-rose-600'}">
+                        ${Number(r.percentage).toFixed(0)} / 100
+                    </td>
+                    <td class="p-3">
+                        <span class="px-2.5 py-1 rounded-full font-bold ${r.violations > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
+                            ${r.violations || 0} kali
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        window.fetchLiveResultsFromCloud = function(showNotice = false) {
+            const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
+            if (!activeCloudUrl || !activeCloudUrl.startsWith('http')) return;
+
+            fetch(`${activeCloudUrl}?action=getResults`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success' && Array.isArray(data.results)) {
+                        CBTApp.results = data.results;
+                        CBTApp.save('results');
+                        const tbody = document.getElementById('results-table-body');
+                        if (tbody) tbody.innerHTML = renderResultRowsHTML();
+                        if (showNotice) showToast(`Data nilai terupdate (${data.results.length} siswa)!`, 'success');
+                    }
+                })
+                .catch(e => {
+                    if (showNotice) showToast('Gagal terhubung ke Google Sheets.', 'error');
+                });
+        };
 
         window.exportToCSV = function() {
             if (CBTApp.results.length === 0) return showToast("Belum ada data nilai!", "error");
@@ -1422,7 +1482,7 @@
                         <p class="text-xs text-slate-500">Pasangkan pernyataan di kiri dengan pilihan jawaban di kanan:</p>
                         ${pairs.map((p, idx) => `
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 border rounded-xl">
-                                <span class="text-xs font-bold text-slate-700">${idx+1}. ${p.left}</span>
+                                <span class="text-xs font-bold text-slate-700">${idx+1}.${p.left}</span>
                                 <select onchange="saveMatchingAnswer('${q.id}', '${p.left}', this.value)" class="px-2.5 py-1.5 border rounded-lg text-xs bg-white font-semibold text-indigo-700">
                                     <option value="">-- Pilih Pasangan --</option>
                                     ${allRightOptions.map(rOpt => `
