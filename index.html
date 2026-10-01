@@ -336,7 +336,7 @@
                                                 <input type="text" readonly value="${studentExamLink}" class="w-full text-xs bg-slate-100 font-mono p-2.5 rounded-lg border text-slate-800 select-all font-semibold">
                                                 <div class="flex gap-2 pt-1">
                                                     <button onclick="navigator.clipboard.writeText('${studentExamLink}'); showToast('Alamat IP disalin!', 'success');" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700">
-                                                        <i class="fa-regular fa-copy mr-1"></i> Salin Link IP
+                                                        <i class="fa-regular fa-copy mr-1"></i> Salin Link IP Siswa
                                                     </button>
                                                     <a href="${studentExamLink}" target="_blank" class="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-200">
                                                         <i class="fa-solid fa-arrow-up-right-from-square mr-1"></i> Buka Tes Siswa
@@ -426,6 +426,7 @@
             CBTApp.sessions.unshift(newSession);
             CBTApp.save('sessions');
 
+            // Kirim sesi ujian ke Google Sheets jika terhubung
             if (CBTApp.gasUrl) {
                 fetch(CBTApp.gasUrl, {
                     method: 'POST',
@@ -927,7 +928,7 @@
             }
         }
 
-        // TAB 3: Data Siswa (Dukungan Ekstraksi Excel Multi-Sheet Presensi Otomatis)
+        // TAB 3: Data Siswa
         function renderTabStudents() {
             const container = document.getElementById('proctor-tab-content');
             container.innerHTML = `
