@@ -1133,16 +1133,16 @@
                                     <i class="fa-solid fa-filter text-indigo-600"></i> Filter Rombel Kelas:
                                 </label>
                                 <select id="result-class-filter" onchange="changeResultClassFilter(this.value)" class="px-3 py-1.5 rounded-lg border bg-white font-bold text-indigo-700 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                                    <option value="ALL" ${currentFilter === 'ALL' ? 'selected' : ''}>-- Semua Kelas (${(CBTApp.results || []).length} Rekaman) --</option>
+                                    <option value="ALL" ${currentFilter === 'ALL' ? 'selected' : ''}>-- Semua Kelas (${(CBTApp.results || []).length} Siswa Terdata) --</option>
                                     ${availableClasses.map(cls => {
                                         const count = (CBTApp.results || []).filter(r => r.studentClass === cls).length;
-                                        return `<option value="${cls}" ${currentFilter === cls ? 'selected' : ''}>Kelas ${cls} (${count} Data)</option>`;
+                                        return `<option value="${cls}" ${currentFilter === cls ? 'selected' : ''}>Kelas ${cls} (${count} Siswa)</option>`;
                                     }).join('')}
                                 </select>
                             </div>
 
                             <div class="text-[11px] text-slate-500 font-medium">
-                                Menampilkan: <strong id="lbl-result-count" class="text-indigo-600 font-bold">${getFilteredResults().length}</strong> dari <strong>${(CBTApp.results || []).length}</strong> total rekaman
+                                Menampilkan: <strong id="lbl-result-count" class="text-indigo-600 font-bold">${getFilteredResults().length}</strong> dari <strong>${(CBTApp.results || []).length}</strong> total rekaman ujian
                             </div>
                         </div>
 
@@ -1218,7 +1218,9 @@
 
                 return list.map((r, idx) => {
                     if (!r) return '';
-                    const isWorking = (r.status || '').toUpperCase() === 'SEDANG MENGERJAKAN';
+                    const rawStatus = r.status !== undefined && r.status !== null ? String(r.status) : 'SELESAI';
+                    const isWorking = rawStatus.toUpperCase() === 'SEDANG MENGERJAKAN';
+                    
                     const sTime = r.submittedAt || 'Baru saja';
                     const sName = r.studentName || '-';
                     const sClass = r.studentClass || '-';
@@ -1513,10 +1515,7 @@
             CBTApp.violationCount++;
             const sisa = CBTApp.maxViolations - CBTApp.violationCount;
 
-            alert(`[PERINGATAN KECURANGAN ${CBTApp.violationCount}/${CBTApp.maxViolations}]
-Anda terdeteksi keluar dari layar penuh atau berpindah tab!
-Tindakan telah dilaporkan ke server proktor.
-Sisa toleransi: ${Math.max(0, sisa)} kali`);
+            alert(`[PERINGATAN KECURANGAN ${CBTApp.violationCount}/${CBTApp.maxViolations}]\nAnda terdeteksi keluar dari layar penuh atau berpindah tab!\nTindakan telah dilaporkan ke server proktor.\nSisa toleransi: ${Math.max(0, sisa)} kali`);
 
             requestFullScreen();
 
@@ -1723,10 +1722,12 @@ Sisa toleransi: ${Math.max(0, sisa)} kali`);
             const session = CBTApp.currentExamSession;
             let achieved = 0;
             let total = 0;
+            let answersDetail = {};
 
             session.questions.forEach(q => {
                 total += q.weight;
                 const uAns = CBTApp.userAnswers[q.id];
+                answersDetail[q.questionText] = uAns || "(Tidak dijawab)";
 
                 if (q.type === 'pg' || !q.type) {
                     if (uAns === q.correctAnswer) achieved += q.weight;
@@ -1767,7 +1768,8 @@ Sisa toleransi: ${Math.max(0, sisa)} kali`);
                 maxScore: total,
                 percentage: percentage,
                 violations: CBTApp.violationCount,
-                submittedAt: new Date().toLocaleTimeString("id-ID", { hour: '2-digit', minute: '2-digit' })
+                submittedAt: new Date().toLocaleTimeString("id-ID", { hour: '2-digit', minute: '2-digit' }),
+                answersDetail: answersDetail
             };
 
             CBTApp.results.unshift(res);
