@@ -51,11 +51,10 @@
 
     <script>
         // ==============================================================
-        // KONFIGURASI CLOUD GOOGLE SHEETS TERHUBUNG LANGSUNG
+        // KONFIGURASI CLOUD GOOGLE SHEETS
         // ==============================================================
         const DEFAULT_GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwWvYI7yv8oH9eHrRyXeUwi9KY1r-2mmcTZBfXCK_danpCKykpFRc2xBXRZOJqgCl3CaA/exec"; 
 
-        // Otomatis tangkap URL Google Sheets jika siswa membuka dari Link/QR Proktor
         const initialUrlParams = new URLSearchParams(window.location.search);
         if (initialUrlParams.has('gas')) {
             try {
@@ -111,7 +110,7 @@
             }
         };
 
-        // Jika data siswa di localStorage masih kosong atau belum lengkap, gunakan data 875 siswa bawaan
+        // Muat Data Siswa
         if (!CBTApp.students || CBTApp.students.length === 0) {
             CBTApp.students = getDefaultStudentList();
             CBTApp.save('students');
@@ -426,7 +425,6 @@
             CBTApp.sessions.unshift(newSession);
             CBTApp.save('sessions');
 
-            // Kirim sesi ujian ke Google Sheets jika terhubung
             if (CBTApp.gasUrl) {
                 fetch(CBTApp.gasUrl, {
                     method: 'POST',
@@ -1108,7 +1106,7 @@
                                     <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Live Realtime
                                 </span>
                             </div>
-                            <p class="text-xs text-slate-400 mt-0.5">Pantau nilai ujian masuk secara langsung, filter per kelas, dan kelola hasil siswa.</p>
+                            <p class="text-xs text-slate-400 mt-0.5">Pantau siswa yang sedang ujian, filter per kelas, dan kelola hasil siswa secara langsung.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
                             <button onclick="fetchLiveResultsFromCloud(true)" class="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
@@ -1127,16 +1125,16 @@
                                 <i class="fa-solid fa-filter text-indigo-600"></i> Filter Rombel Kelas:
                             </label>
                             <select id="result-class-filter" onchange="changeResultClassFilter(this.value)" class="px-3 py-1.5 rounded-lg border bg-white font-bold text-indigo-700 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-                                <option value="ALL" ${currentFilter === 'ALL' ? 'selected' : ''}>-- Semua Kelas (${CBTApp.results.length} Siswa) --</option>
+                                <option value="ALL" ${currentFilter === 'ALL' ? 'selected' : ''}>-- Semua Kelas (${CBTApp.results.length} Siswa Terdata) --</option>
                                 ${availableClasses.map(cls => {
                                     const count = CBTApp.results.filter(r => r.studentClass === cls).length;
-                                    return `<option value="${cls}" ${currentFilter === cls ? 'selected' : ''}>Kelas ${cls} (${count} Siswa Selesai)</option>`;
+                                    return `<option value="${cls}" ${currentFilter === cls ? 'selected' : ''}>Kelas ${cls} (${count} Siswa)</option>`;
                                 }).join('')}
                             </select>
                         </div>
 
                         <div class="text-[11px] text-slate-500 font-medium">
-                            Menampilkan: <strong id="lbl-result-count" class="text-indigo-600 font-bold">${getFilteredResults().length}</strong> dari <strong>${CBTApp.results.length}</strong> total hasil ujian
+                            Menampilkan: <strong id="lbl-result-count" class="text-indigo-600 font-bold">${getFilteredResults().length}</strong> dari <strong>${CBTApp.results.length}</strong> total rekaman ujian
                         </div>
                     </div>
 
@@ -1144,10 +1142,11 @@
                         <table class="w-full text-left text-xs">
                             <thead class="bg-slate-50 uppercase text-slate-500 font-semibold border-b">
                                 <tr>
-                                    <th class="p-3">Waktu Selesai</th>
+                                    <th class="p-3">Waktu</th>
                                     <th class="p-3">Nama Lengkap Siswa</th>
                                     <th class="p-3">Kelas</th>
                                     <th class="p-3">Token Ujian</th>
+                                    <th class="p-3">Status</th>
                                     <th class="p-3">Nilai Akhir</th>
                                     <th class="p-3">Pelanggaran (Layar/Tab)</th>
                                     <th class="p-3 text-center">Aksi</th>
@@ -1161,10 +1160,8 @@
                 </div>
             `;
 
-            // Segera ambil data terkini dari Google Sheets
             fetchLiveResultsFromCloud();
 
-            // Pasang polling otomatis setiap 5 detik saat Proktor membuka tab Hasil Realtime
             if (liveRefreshInterval) clearInterval(liveRefreshInterval);
             liveRefreshInterval = setInterval(() => {
                 if (CBTApp.activeTab === 'results') {
@@ -1196,43 +1193,49 @@
             if (!list || list.length === 0) {
                 const currentFilter = CBTApp.selectedResultClass || 'ALL';
                 const msg = currentFilter === 'ALL' 
-                    ? 'Belum ada siswa yang menyelesaikan ujian. Menunggu pengiriman lembar jawaban...'
-                    : `Belum ada siswa dari Kelas ${currentFilter} yang menyelesaikan ujian.`;
-                return `<tr><td colspan="7" class="text-center py-10 text-slate-400">${msg}</td></tr>`;
+                    ? 'Belum ada siswa yang masuk atau menyelesaikan ujian. Menunggu aktivitas siswa...'
+                    : `Belum ada data aktivitas siswa untuk Kelas ${currentFilter}.`;
+                return `<tr><td colspan="8" class="text-center py-10 text-slate-400">${msg}</td></tr>`;
             }
 
-            return list.map((r, idx) => `
-                <tr class="hover:bg-slate-50/60 transition">
-                    <td class="p-3 text-slate-400 font-mono">${r.submittedAt || 'Baru saja'}</td>
-                    <td class="p-3 font-bold text-slate-800">${r.studentName}</td>
-                    <td class="p-3"><span class="px-2 py-0.5 bg-slate-100 font-bold rounded">${r.studentClass}</span></td>
-                    <td class="p-3 font-mono font-bold text-indigo-600">${r.token}</td>
-                    <td class="p-3 font-extrabold text-sm ${r.percentage >= 70 ? 'text-emerald-600' : 'text-rose-600'}">
-                        ${Number(r.percentage).toFixed(0)} / 100
-                    </td>
-                    <td class="p-3">
-                        <span class="px-2.5 py-1 rounded-full font-bold ${r.violations > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
-                            ${r.violations || 0} kali
-                        </span>
-                    </td>
-                    <td class="p-3 text-center">
-                        <button onclick="deleteSingleResult('${r.studentName}', '${r.token}', '${r.studentClass}')" class="px-2.5 py-1 text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-transparent rounded-lg font-semibold text-[11px] transition inline-flex items-center gap-1 shadow-sm" title="Hapus nilai siswa ini">
-                            <i class="fa-solid fa-trash-can"></i> Hapus
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
+            return list.map((r) => {
+                const isWorking = (r.status || '').toUpperCase() === 'SEDANG MENGERJAKAN';
+                return `
+                    <tr class="hover:bg-slate-50/60 transition">
+                        <td class="p-3 text-slate-400 font-mono">${r.submittedAt || 'Baru saja'}</td>
+                        <td class="p-3 font-bold text-slate-800">${r.studentName}</td>
+                        <td class="p-3"><span class="px-2 py-0.5 bg-slate-100 font-bold rounded">${r.studentClass}</span></td>
+                        <td class="p-3 font-mono font-bold text-indigo-600">${r.token}</td>
+                        <td class="p-3">
+                            <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${isWorking ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-emerald-100 text-emerald-800'}">
+                                ${isWorking ? '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Sedang Mengerjakan' : '<i class="fa-solid fa-check mr-1"></i> Selesai'}
+                            </span>
+                        </td>
+                        <td class="p-3 font-extrabold text-sm ${isWorking ? 'text-slate-400' : (r.percentage >= 70 ? 'text-emerald-600' : 'text-rose-600')}">
+                            ${isWorking ? 'Proses...' : `${Number(r.percentage || 0).toFixed(0)} / 100`}
+                        </td>
+                        <td class="p-3">
+                            <span class="px-2.5 py-1 rounded-full font-bold ${r.violations > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
+                                ${r.violations || 0} kali
+                            </span>
+                        </td>
+                        <td class="p-3 text-center">
+                            <button onclick="deleteSingleResult('${r.studentName}', '${r.token}', '${r.studentClass}')" class="px-2.5 py-1 text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-transparent rounded-lg font-semibold text-[11px] transition inline-flex items-center gap-1 shadow-sm" title="Hapus rekaman siswa ini">
+                                <i class="fa-solid fa-trash-can"></i> Hapus
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
         }
 
         window.deleteSingleResult = function(studentName, token, studentClass) {
-            const confirmed = confirm(`Apakah Anda yakin ingin menghapus hasil ujian siswa:\n"${studentName}" (${studentClass}) - Token: ${token}?\n\nNilai ini akan dihapus dari dasbor dan Google Sheets.`);
+            const confirmed = confirm(`Apakah Anda yakin ingin menghapus data siswa:\n"${studentName}" (${studentClass}) - Token: ${token}?\n\nData ini akan dihapus dari dasbor dan Google Sheets.`);
             if (!confirmed) return;
 
-            // 1. Hapus dari state lokal
             CBTApp.results = CBTApp.results.filter(r => !(r.studentName === studentName && r.token === token));
             CBTApp.save('results');
 
-            // 2. Kirim perintah hapus ke Google Sheets jika terhubung
             const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
             if (activeCloudUrl && activeCloudUrl.startsWith('http')) {
                 fetch(activeCloudUrl, {
@@ -1243,9 +1246,8 @@
                 }).catch(e => console.warn('Delete result GAS error:', e));
             }
 
-            showToast(`Hasil tes siswa "${studentName}" berhasil dihapus!`, 'success');
+            showToast(`Data ujian "${studentName}" berhasil dihapus!`, 'success');
 
-            // Perbarui tampilan tabel dan dropdown
             const tbody = document.getElementById('results-table-body');
             const lblCount = document.getElementById('lbl-result-count');
             if (tbody) tbody.innerHTML = renderResultRowsHTML();
@@ -1266,7 +1268,7 @@
                         const lblCount = document.getElementById('lbl-result-count');
                         if (tbody) tbody.innerHTML = renderResultRowsHTML();
                         if (lblCount) lblCount.innerText = getFilteredResults().length;
-                        if (showNotice) showToast(`Data nilai terupdate (${data.results.length} siswa)!`, 'success');
+                        if (showNotice) showToast(`Data terupdate (${data.results.length} siswa)!`, 'success');
                     }
                 })
                 .catch(e => {
@@ -1276,11 +1278,11 @@
 
         window.exportToCSV = function() {
             const listToExport = getFilteredResults();
-            if (!listToExport || listToExport.length === 0) return showToast("Belum ada data nilai yang dipilih!", "error");
+            if (!listToExport || listToExport.length === 0) return showToast("Belum ada data yang dipilih!", "error");
             
-            let csv = "Nama,Kelas,Token,Skor,MaxSkor,Persentase,Pelanggaran,Waktu\n";
+            let csv = "Nama,Kelas,Token,Status,Skor,MaxSkor,Persentase,Pelanggaran,Waktu\n";
             listToExport.forEach(r => {
-                csv += `"${r.studentName}","${r.studentClass}","${r.token}",${r.score || 0},${r.maxScore || 100},${Number(r.percentage || 0).toFixed(0)},${r.violations || 0},"${r.submittedAt || ''}"\n`;
+                csv += `"${r.studentName}","${r.studentClass}","${r.token}","${r.status || 'SELESAI'}",${r.score || 0},${r.maxScore || 100},${Number(r.percentage || 0).toFixed(0)},${r.violations || 0},"${r.submittedAt || ''}"\n`;
             });
 
             const currentFilter = CBTApp.selectedResultClass || 'ALL';
@@ -1403,9 +1405,21 @@
             const token = document.getElementById('student-token').value.trim().toUpperCase();
 
             let session = CBTApp.sessions.find(s => s.token === token);
-
-            // Jika siswa membuka di HP dan belum ada di lokal, ambil otomatis dari Google Sheets
             const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
+
+            // Beri sinyal ke Cloud bahwa siswa sudah login & sedang mengerjakan
+            if (activeCloudUrl && activeCloudUrl.startsWith('http')) {
+                fetch(activeCloudUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'startExamLog',
+                        student: { name: name, class: cls, token: token }
+                    })
+                }).catch(()=>{});
+            }
+
             if (!session && activeCloudUrl && activeCloudUrl.startsWith('http')) {
                 showToast("Mengambil soal ujian dari Google Sheets...", "info");
                 fetch(`${activeCloudUrl}?action=getSession&token=${token}`)
@@ -1709,17 +1723,18 @@
                 token: session.token,
                 studentName: CBTApp.studentInfo.name,
                 studentClass: CBTApp.studentInfo.class,
+                status: 'SELESAI',
                 score: achieved,
                 maxScore: total,
                 percentage: percentage,
                 violations: CBTApp.violationCount,
-                submittedAt: new Date().toISOString()
+                submittedAt: new Date().toLocaleTimeString("id-ID", { hour: '2-digit', minute: '2-digit' })
             };
 
             CBTApp.results.unshift(res);
             CBTApp.save('results');
 
-            // Kirim nilai siswa langsung ke Google Sheets jika terhubung
+            // Kirim nilai akhir ke Google Sheets
             const activeCloudUrl = CBTApp.gasUrl || DEFAULT_GOOGLE_SCRIPT_URL;
             if (activeCloudUrl && activeCloudUrl.startsWith('http')) {
                 fetch(activeCloudUrl, {
